@@ -19,6 +19,8 @@ monitoring = True
 REMOTE_PC_IP = "127.0.0.1"
 PORT = DEFAULT_PORT
 root = None
+tray_icon = None
+status_label = None
 
 def load_config():
     global REMOTE_PC_IP, PORT
@@ -72,49 +74,80 @@ def start_server():
 def show_window():
     global root
     if root is not None:
-        root.deiconify()
+        root.after(0, root.deiconify)
 
 def hide_window():
     global root
     if root is not None:
-        root.withdraw()
+        root.after(0, root.withdraw)
+
+def update_status_label():
+    global status_label
+    if status_label:
+        status_label.config(text="Estado: 🟢 Activo" if monitoring else "Estado: 🔴 Inactivo")
 
 def on_quit(icon, item):
     global running
     running = False
-    icon.stop()
     if root:
         root.quit()
+    icon.stop()
 
-def toggle_monitoring(icon, item):
+def toggle_monitoring_action():
     global monitoring
     monitoring = not monitoring
+    update_status_label()
+
+def toggle_monitoring(icon, item):
+    toggle_monitoring_action()
 
 def change_ip(icon, item):
-    global REMOTE_PC_IP
-    ip = simpledialog.askstring("Configurar IP", "Introduce la IP del otro PC:", initialvalue=REMOTE_PC_IP)
-    if ip:
-        REMOTE_PC_IP = ip
-        save_config()
+    if root:
+        def prompt():
+            global REMOTE_PC_IP
+            ip = simpledialog.askstring("Configurar IP", "Introduce la IP del otro PC:", initialvalue=REMOTE_PC_IP)
+            if ip:
+                REMOTE_PC_IP = ip
+                save_config()
+        root.after(0, prompt)
 
 def setup_systray():
-    icon_image = Image.open("clipboard_sync_icon.ico")
+    global tray_icon
+    try:
+        icon_path = os.path.join(os.path.abspath("."), "clipboard_sync_icon.ico")
+        image = Image.open(icon_path)
+    except:
+        image = Image.new("RGB", (64, 64), "gray")
+
     menu = (
         item("Mostrar ventana", lambda icon, item: show_window()),
         item("Activar/Desactivar", toggle_monitoring),
         item("Cambiar IP", change_ip),
         item("Salir", on_quit)
     )
-    tray_icon = pystray.Icon("ClipboardSync", icon_image, "Clipboard Sync", menu)
+    tray_icon = pystray.Icon("ClipboardSync", image, "Clipboard Sync", menu)
     tray_icon.run()
 
 def start_gui():
-    global root
+    global root, status_label
     root = tk.Tk()
     root.title("Clipboard Sync")
-    root.geometry("250x100")
+    root.geometry("280x140")
     root.resizable(False, False)
+    root.protocol("WM_DELETE_WINDOW", lambda: root.withdraw())
+
+    status_label = tk.Label(root, text="", font=("Arial", 11))
+    status_label.pack(pady=10)
+
+    toggle_btn = tk.Button(root, text="Activar/Desactivar", command=toggle_monitoring_action)
+    toggle_btn.pack(pady=5)
+
+    ip_btn = tk.Button(root, text="Cambiar IP", command=lambda: change_ip(None, None))
+    ip_btn.pack(pady=5)
+
+    update_status_label()
     root.withdraw()
+    root.mainloop()
 
 load_config()
 threading.Thread(target=clipboard_monitor, daemon=True).start()
